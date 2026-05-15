@@ -19,7 +19,7 @@ pymongo==4.7.2
 cloudinary==1.40.0
 
 # =========================
-# Core ML
+# Core ML / Data
 # =========================
 numpy==1.26.4
 pandas==2.2.2
@@ -27,29 +27,21 @@ scikit-learn==1.4.2
 joblib==1.4.2
 
 # =========================
-# PyTorch CPU
+# Vision (Lightweight)
 # =========================
-torch==2.3.0
-torchvision==0.18.0
-
-# =========================
-# Vision
-# =========================
-opencv-python-headless==4.9.0.80
 Pillow==10.3.0
-ultralytics==8.2.0
 
 # =========================
-# LLM
+# LLM / RAG
 # =========================
 langchain==0.2.16
 langchain-core==0.2.43
-langchain-google-genai==1.0.10
-google-generativeai==0.7.2
-langchain-pinecone==0.1.3
-pinecone-client==3.2.2
-sentence-transformers==2.7.0
 langchain-community==0.2.16
+langchain-google-genai==1.0.10
+langchain-pinecone==0.1.3
+
+google-generativeai==0.7.2
+pinecone-client==3.2.2
 
 # =========================
 # Utilities
