@@ -101,8 +101,8 @@ wandb/
 # =========================
 data/
 datasets/
-training_data/
-*.csv
+# training_data/
+# *.csv
 *.tsv
 *.xlsx
 *.xls

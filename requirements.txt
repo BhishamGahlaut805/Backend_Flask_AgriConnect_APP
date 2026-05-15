@@ -87,3 +87,7 @@ pytz==2024.1
 tqdm==4.67.3
 tenacity==8.5.0
 typing-extensions==4.15.0
+
+
+langchain-pinecone==0.1.0  # For langchain_pinecone module
+ultralytics==8.2.0         # For YOLO/computer vision functionality
