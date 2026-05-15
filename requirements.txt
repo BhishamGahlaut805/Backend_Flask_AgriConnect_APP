@@ -1,32 +1,89 @@
+# Core Web Framework
 Flask==3.0.3
 Flask-Cors==4.0.1
 Flask-SocketIO==5.3.6
+Flask-JWT-Extended==4.6.0
+Flask-Bcrypt==1.0.1
+Flask-SQLAlchemy==3.1.1
 gunicorn==22.0.0
 eventlet==0.36.1
+python-engineio==4.13.1
+python-socketio==5.16.1
 
+# Database
 pymongo==4.7.2
+psycopg2-binary==2.9.9
+SQLAlchemy==2.0.49
+
+# Cloud Storage
 cloudinary==1.40.0
 
+# Data Science & ML Core
 numpy==1.26.4
 pandas==2.2.2
 scikit-learn==1.4.2
+scipy==1.15.3
 joblib==1.4.2
+matplotlib==3.8.4
 
+# Deep Learning (Critical - was missing!)
+tensorflow==2.15.1  # Stable version for Python 3.10
+keras==2.15.0
+
+# Computer Vision
 opencv-python-headless==4.9.0.80
 Pillow==10.3.0
 
+# Web Scraping & HTTP
 requests==2.32.3
 beautifulsoup4==4.12.3
+selenium==4.20.0
+urllib3==2.2.1
+
+# Environment & Config
 python-dotenv==1.0.1
 PyYAML==6.0.1
-geopy==2.4.1
-PyPDF2==3.0.1
 
+# Geospatial
+geopy==2.4.1
+
+# PDF Processing
+PyPDF2==3.0.1
+pdfplumber==0.11.0  # Alternative for PDF parsing
+
+# AI & LLM
 google-generativeai==0.7.2
 langchain==0.2.16
 langchain-community==0.2.16
 langchain-google-genai==1.0.10
+langchain-core==0.2.43
+langchain-text-splitters==0.2.4
 
+# Vector Database
 pinecone-client==3.2.2
+
+# NLP & Embeddings
 sentence-transformers==2.7.0
+transformers==4.57.6
+tokenizers==0.22.2
+huggingface-hub==0.36.2
+
+# Visualization (Critical - was missing!)
 plotly==5.24.1
+
+# Authentication & Security
+PyJWT==2.8.0
+bcrypt==4.1.2
+cryptography==42.0.5
+
+# Async & HTTP Clients
+aiohttp==3.13.5
+httpx==0.28.1
+httpcore==1.0.9
+
+# Utilities
+python-dateutil==2.9.0.post0
+pytz==2024.1
+tqdm==4.67.3
+tenacity==8.5.0
+typing-extensions==4.15.0
