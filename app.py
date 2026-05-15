@@ -12,6 +12,10 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+#import Eventlet for SocketIO async support
+import eventlet
+eventlet.monkey_patch()
+
 # Configure logging FIRST - before any other imports
 logging.basicConfig(
     level=logging.INFO,
@@ -106,7 +110,7 @@ try:
     socketio = SocketIO(
         app,
         cors_allowed_origins=FRONTEND_URLS,
-        async_mode='threading',
+        async_mode='eventlet',
         logger=False,
         engineio_logger=False
     )
@@ -373,15 +377,27 @@ def create_app():
     return app
 
 # ========== PRODUCTION ENTRY POINT ==========
+# ========== PRODUCTION ENTRY POINT ==========
 if __name__ == '__main__':
     PORT = int(os.environ.get("PORT", 10000))
-    HOST = os.environ.get("HOST", "0.0.0.0")
-    DEBUG = os.environ.get("FLASK_DEBUG", "False").lower() == "true"
+    HOST = "0.0.0.0"
 
-    logger.info(f"Starting AgriConnect API on {HOST}:{PORT} (debug={DEBUG})")
+    print(f"=== STARTING SERVER ON {HOST}:{PORT} ===", flush=True)
 
-    if socketio:
-        socketio.run(app, debug=DEBUG, host=HOST, port=PORT, allow_unsafe_werkzeug=True)
-    else:
-        app.run(debug=DEBUG, host=HOST, port=PORT)
-        
+    try:
+        if socketio:
+            socketio.run(
+                app,
+                host=HOST,
+                port=PORT,
+                debug=False
+            )
+        else:
+            app.run(
+                host=HOST,
+                port=PORT,
+                debug=False
+            )
+    except Exception as e:
+        print(f"SERVER FAILED: {e}", flush=True)
+        raise
