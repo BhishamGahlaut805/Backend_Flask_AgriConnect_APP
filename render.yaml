@@ -4,13 +4,13 @@ services:
     runtime: python
     plan: free
 
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.13
+
     buildCommand: |
+      python -m pip install --upgrade pip
       pip install -r requirements.txt
 
     startCommand: |
       gunicorn app:app
-
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.10.13
-        
