@@ -52,14 +52,13 @@ geopy==2.4.1
 PyPDF2==3.0.1
 pdfplumber==0.11.0
 
-# AI & LLM - COMPATIBLE VERSIONS (Fixed conflicts)
+# AI & LLM - CORRECTED VERSIONS (These actually exist)
 google-generativeai==0.7.2
 langchain==0.1.20
-langchain-community==0.1.5
+langchain-community==0.0.38
 langchain-google-genai==0.0.10
 langchain-core==0.1.53
 langchain-text-splitters==0.0.2
-langchain-pinecone==0.0.3
 
 # Vector Database
 pinecone-client==3.2.2
