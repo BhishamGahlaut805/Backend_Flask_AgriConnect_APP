@@ -1,0 +1,171 @@
+# =========================
+# Python / Flask
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Flask
+instance/
+.webassets-cache/
+*.db
+*.sqlite3
+flask_session/
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+
+# =========================
+# IDE / Editor Files
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+
+# =========================
+# OS Files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Testing / Coverage
+# =========================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+coverage.xml
+
+# =========================
+# Jupyter Notebook
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# Build / Distribution
+# =========================
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# =========================
+# Uploads / Temporary Files
+# =========================
+uploads/
+temp/
+tmp/
+*.tmp
+
+# =========================
+# ML / DL Models
+# =========================
+*.h5
+*.hdf5
+*.keras
+*.ckpt
+*.pth
+*.pt
+*.onnx
+*.pb
+*.joblib
+*.pkl
+*.pickle
+*.sav
+
+# TensorFlow / PyTorch Cache
+runs/
+checkpoints/
+tensorboard/
+wandb/
+
+# =========================
+# Dataset Files
+# =========================
+data/
+datasets/
+training_data/
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.parquet
+
+# Keep sample datasets if needed
+!sample_data/
+!*.sample.csv
+
+# =========================
+# Media / Generated Content
+# =========================
+*.mp4
+*.avi
+*.mov
+*.wav
+*.mp3
+generated/
+outputs/
+
+# =========================
+# MongoDB / Local DB Dumps
+# =========================
+dump/
+*.bson
+*.archive
+
+# =========================
+# Node.js (if MERN frontend exists)
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# React / Vite / Next
+.next/
+out/
+dist/
+.cache/
+
+# =========================
+# Docker
+# =========================
+docker-compose.override.yml
+
+# =========================
+# Secrets / API Keys
+# =========================
+secrets.json
+credentials.json
+serviceAccountKey.json
+
+# =========================
+# Pinecone / Vector Cache
+# =========================
+vector_cache/
+faiss_index/
+chroma_db/
+
+# =========================
+# Misc
+# =========================
+*.zip
+*.tar.gz
+*.rar
