@@ -1,54 +1,31 @@
-# =========================
-# Flask Backend
-# =========================
 Flask==3.0.3
 Flask-Cors==4.0.1
 Flask-SocketIO==5.3.6
 gunicorn==22.0.0
-Werkzeug==3.0.3
 eventlet==0.36.1
 
-# =========================
-# Database
-# =========================
 pymongo==4.7.2
-
-# =========================
-# Cloud
-# =========================
 cloudinary==1.40.0
 
-# =========================
-# Core ML / Data
-# =========================
 numpy==1.26.4
 pandas==2.2.2
 scikit-learn==1.4.2
 joblib==1.4.2
 
-# =========================
-# Vision (Lightweight)
-# =========================
+opencv-python-headless==4.9.0.80
 Pillow==10.3.0
 
-# =========================
-# LLM / RAG
-# =========================
-langchain==0.2.16
-langchain-core==0.2.43
-langchain-community==0.2.16
-langchain-google-genai==1.0.10
-langchain-pinecone==0.1.3
-
-google-generativeai==0.7.2
-pinecone-client==3.2.2
-
-# =========================
-# Utilities
-# =========================
 requests==2.32.3
 beautifulsoup4==4.12.3
 python-dotenv==1.0.1
 PyYAML==6.0.1
 geopy==2.4.1
 PyPDF2==3.0.1
+
+google-generativeai==0.7.2
+langchain==0.2.16
+langchain-community==0.2.16
+langchain-google-genai==1.0.10
+
+pinecone-client==3.2.2
+sentence-transformers==2.7.0
