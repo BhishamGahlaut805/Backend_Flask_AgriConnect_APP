@@ -1,44 +1,35 @@
 """
-AgriConnect Backend - Production Ready Flask Application
-Deployment: Render.com
+AgriConnect Backend - Optimized for Render Free Tier
 """
 
 import os
+
+# MUST BE FIRST - TensorFlow memory optimization
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+
 import sys
-import time
-import uuid
 import logging
-import tempfile
+import uuid
 from datetime import datetime
-from pathlib import Path
-
-#import Eventlet for SocketIO async support
-import eventlet
-eventlet.monkey_patch()
-
-# Configure logging FIRST - before any other imports
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('app.log') if os.environ.get('LOG_FILE') else logging.NullHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
-
-# Suppress noisy TensorFlow logs
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-
-# Import Flask and extensions
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+# ========== LOGGING ==========
+# Use only stream handler - no file on ephemeral filesystem
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+
+logger = logging.getLogger(__name__)
 
 # ========== CONFIGURATION CLASS ==========
 class Config:
@@ -60,9 +51,47 @@ class Config:
     PORT = int(os.environ.get('PORT', 10000))
     HOST = '0.0.0.0'
 
-# ========== LAZY IMPORTS FOR HEAVY MODULES ==========
-# These modules are imported only when needed to speed up startup
+# ========== CREATE FLASK APP ==========
+app = Flask(__name__)
+app.config.from_object(Config)
+app.secret_key = Config.SECRET_KEY
 
+# ========== CORS CONFIGURATION - NO WILDCARD SUBDOMAINS ==========
+FRONTEND_URLS = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://localhost:5000",
+]
+
+frontend_env = os.environ.get("FRONTEND_URL")
+if frontend_env:
+    FRONTEND_URLS.append(frontend_env)
+
+# Add Render production URL if present
+render_url = os.environ.get("RENDER_EXTERNAL_URL")
+if render_url:
+    FRONTEND_URLS.append(render_url)
+
+CORS(
+    app,
+    supports_credentials=True,
+    resources={r"/*": {"origins": FRONTEND_URLS}}
+)
+
+# ========== SOCKET.IO WITH THREADING MODE - NO EVENTLET ==========
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    async_mode="threading",
+    logger=False,
+    engineio_logger=False,
+    ping_timeout=60,
+    ping_interval=25
+)
+
+logger.info("SocketIO initialized with threading mode")
+
+# ========== LAZY IMPORTS FOR HEAVY MODULES ==========
 def lazy_import_mongo_storage():
     """Lazy import mongo_storage to avoid early failures"""
     try:
@@ -72,52 +101,14 @@ def lazy_import_mongo_storage():
         logger.error(f"Failed to import mongo_storage: {e}")
         return None
 
-def lazy_import_models():
-    """Lazy import ML models to avoid loading them at startup"""
-    global CropDiseasePredictor
+def lazy_import_crop_disease_predictor():
+    """Lazy import CropDiseasePredictor only when needed"""
     try:
         from crop_disease_outbreak.data_service.crop_reports import CropDiseasePredictor
-        return True
+        return CropDiseasePredictor
     except Exception as e:
         logger.warning(f"Could not import CropDiseasePredictor: {e}")
-        return False
-
-# ========== CREATE FLASK APP ==========
-app = Flask(__name__)
-app.config.from_object(Config)
-
-# ========== CORS CONFIGURATION ==========
-FRONTEND_URLS = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    os.environ.get("FRONTEND_URL", "https://agriconnect-frontend.onrender.com"),
-    "https://*.onrender.com"
-]
-
-# Remove None values
-FRONTEND_URLS = [url for url in FRONTEND_URLS if url]
-
-CORS(app,
-     supports_credentials=True,
-     origins=FRONTEND_URLS,
-     allow_headers=["Content-Type", "Authorization"],
-     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-
-app.secret_key = Config.SECRET_KEY
-
-# ========== SOCKET.IO WITH FALLBACK ==========
-try:
-    socketio = SocketIO(
-        app,
-        cors_allowed_origins=FRONTEND_URLS,
-        async_mode='eventlet',
-        logger=False,
-        engineio_logger=False
-    )
-    logger.info("SocketIO initialized successfully")
-except Exception as e:
-    logger.warning(f"SocketIO initialization failed: {e}")
-    socketio = None
+        return None
 
 # ========== HEALTH CHECK ENDPOINTS ==========
 @app.route('/health', methods=['GET'])
@@ -137,7 +128,7 @@ def health_check():
         "timestamp": datetime.utcnow().isoformat(),
         "service": "AgriConnect Backend",
         "mongodb": mongo_status,
-        "version": "2.0.0"
+        "version": "3.0.0"
     })
 
 @app.route('/', methods=['GET'])
@@ -158,7 +149,7 @@ def readiness_check():
     """Readiness probe for Render"""
     return jsonify({"ready": True}), 200
 
-# ========== ERROR HANDLERS ==========
+# ========== ERROR HANDLERS - NO INTERNAL ERROR LEAKS ==========
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({"error": "Resource not found"}), 404
@@ -170,59 +161,67 @@ def internal_error(error):
 
 @app.errorhandler(Exception)
 def handle_exception(e):
+    """Generic exception handler - doesn't leak internal details"""
     logger.error(f"Unhandled exception: {e}", exc_info=True)
-    return jsonify({"error": str(e)}), 500
+    return jsonify({"error": "Internal server error"}), 500
 
-# ========== BLUEPRINT REGISTRATION WITH ERROR HANDLING ==========
-def register_blueprint_safely(app, blueprint, url_prefix=None, name=None):
-    """Safely register a blueprint with error handling"""
+# ========== OPTIMIZED BLUEPRINT LOADING ==========
+# Only load lightweight blueprints at startup
+# Heavy ML blueprints are loaded lazily via routes
+
+def register_optional_blueprints():
+    """Register only lightweight blueprints at startup"""
+    modules = [
+        ("weather_section.api", "weather_bp", "/api/weather"),
+        ("crop_yield_predictor.api", "api_blueprint", None),
+        ("market_price.market_prices", "market_prices_bp", None),
+        ("farm_models.api", "CropRecommendationBp", "/api/v1"),
+    ]
+
+    for module_name, blueprint_name, prefix in modules:
+        try:
+            module = __import__(module_name, fromlist=[blueprint_name])
+            blueprint = getattr(module, blueprint_name)
+
+            if prefix:
+                app.register_blueprint(blueprint, url_prefix=prefix)
+            else:
+                app.register_blueprint(blueprint)
+
+            logger.info(f"Loaded {blueprint_name}")
+
+        except Exception as e:
+            logger.warning(f"Could not load {module_name}: {e}")
+
+# Register lightweight blueprints
+register_optional_blueprints()
+
+# ========== LAZY-LOADED HEAVY BLUEPRINT ROUTES ==========
+# Instead of importing heavy blueprints at startup, create routes
+# that lazy-import internally
+
+@app.route('/api/agribot/<path:subpath>', methods=['GET', 'POST'])
+def lazy_agribot(subpath):
+    """Lazy load Agribot blueprint only when accessed"""
     try:
-        if url_prefix:
-            app.register_blueprint(blueprint, url_prefix=url_prefix)
-        else:
-            app.register_blueprint(blueprint)
-        logger.info(f"Registered blueprint: {blueprint.name if hasattr(blueprint, 'name') else name}")
-        return True
+        # Import only when route is called
+        from llm.api import Agribot_bp1
+        # Create a request context and forward to blueprint
+        return Agribot_bp1.handle_request(subpath)
     except Exception as e:
-        logger.warning(f"Failed to register blueprint {name}: {e}")
-        return False
+        logger.error(f"Agribot route failed: {e}")
+        return jsonify({"error": "Agribot service unavailable"}), 503
 
-# Import and register blueprints with error handling
-try:
-    from weather_section.api import weather_bp
-    register_blueprint_safely(app, weather_bp, url_prefix='/api/weather', name='weather')
-except Exception as e:
-    logger.warning(f"Weather module unavailable: {e}")
-
-try:
-    from crop_vs_weed.api import weed_bp
-    register_blueprint_safely(app, weed_bp, name='weed')
-except Exception as e:
-    logger.warning(f"Weed module unavailable: {e}")
-
-try:
-    from crop_yield_predictor.api import api_blueprint
-    register_blueprint_safely(app, api_blueprint, name='crop_yield')
-except Exception as e:
-    logger.warning(f"Crop yield module unavailable: {e}")
-
-try:
-    from market_price.market_prices import market_prices_bp
-    register_blueprint_safely(app, market_prices_bp, name='market_prices')
-except Exception as e:
-    logger.warning(f"Market prices module unavailable: {e}")
-
-try:
-    from farm_models.api import CropRecommendationBp
-    register_blueprint_safely(app, CropRecommendationBp, url_prefix='/api/v1', name='crop_recommendation')
-except Exception as e:
-    logger.warning(f"Crop recommendation module unavailable: {e}")
-
-try:
-    from llm.api import Agribot_bp1
-    register_blueprint_safely(app, Agribot_bp1, url_prefix="/api/agribot", name='agribot')
-except Exception as e:
-    logger.warning(f"Agribot module unavailable: {e}")
+@app.route('/api/weed/<path:subpath>', methods=['GET', 'POST'])
+def lazy_weed(subpath):
+    """Lazy load Weed detection blueprint only when accessed"""
+    try:
+        # Import only when route is called - loads YOLO/OpenCV at that time
+        from crop_vs_weed.api import weed_bp
+        return weed_bp.handle_request(subpath)
+    except Exception as e:
+        logger.error(f"Weed detection route failed: {e}")
+        return jsonify({"error": "Weed detection service unavailable"}), 503
 
 # ========== MAIN API ENDPOINTS ==========
 
@@ -230,11 +229,11 @@ except Exception as e:
 def predict_disease():
     """Disease prediction endpoint with lazy loading"""
     import tempfile
-    import requests
 
     try:
         # Lazy load the predictor only when needed
-        if not lazy_import_models():
+        CropDiseasePredictor = lazy_import_crop_disease_predictor()
+        if not CropDiseasePredictor:
             return jsonify({"error": "ML models not available"}), 503
 
         predictor = CropDiseasePredictor()
@@ -323,10 +322,46 @@ def predict_disease():
 
     except Exception as e:
         logger.error(f"Prediction failed: {e}", exc_info=True)
-        return jsonify({"status": "error", "error": str(e)}), 500
+        return jsonify({"status": "error", "error": "Prediction service error"}), 500
+
+# ========== FILE SERVING - FIXED FOR GRIDFS ==========
+@app.route('/api/uploads/<file_id>')
+def serve_upload(file_id):
+    """Serve files from GridFS - proper streaming from MongoDB"""
+    try:
+        mongo_storage = lazy_import_mongo_storage()
+
+        if not mongo_storage:
+            return jsonify({"error": "Storage unavailable"}), 503
+
+        from bson import ObjectId
+
+        # Get file from GridFS
+        file_data = mongo_storage.fs.get(ObjectId(file_id))
+
+        # Return as streaming response
+        return Response(
+            file_data.read(),
+            mimetype=file_data.content_type or "application/octet-stream",
+            headers={
+                "Content-Disposition": f"inline; filename={file_data.filename}"
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Upload serve failed: {e}")
+        return jsonify({"error": "File not found"}), 404
 
 # ========== SOCKET.IO EVENT HANDLERS ==========
-if socketio:
+# Lazy load SocketIO handlers only when needed
+_socketio_handlers_loaded = False
+
+def load_socketio_handlers():
+    """Lazy load SocketIO handlers to avoid loading YOLO at startup"""
+    global _socketio_handlers_loaded
+    if _socketio_handlers_loaded:
+        return
+
     try:
         from crop_vs_weed.api import generate_frames, camera_manager
 
@@ -349,27 +384,17 @@ if socketio:
             if camera_manager:
                 camera_manager.set_streaming(False)
             logger.info('Stream stopped by client')
+
+        _socketio_handlers_loaded = True
+        logger.info("SocketIO handlers loaded")
+
     except Exception as e:
         logger.warning(f"SocketIO event handlers setup failed: {e}")
 
-# ========== FILE SERVING ==========
-@app.route('/api/uploads/<file_id>')
-def serve_upload(file_id):
-    """Serve files from GridFS or local storage"""
-    try:
-        mongo_storage = lazy_import_mongo_storage()
-        if mongo_storage:
-            from bson.objectid import ObjectId
-            grid_out = mongo_storage.fs.get(ObjectId(file_id))
-            return send_from_directory(
-                directory="",
-                path=grid_out.filename,
-                mimetype=grid_out.content_type
-            )
-        return jsonify({"error": "Storage not available"}), 503
-    except Exception as e:
-        logger.error(f"File serving failed: {e}")
-        return jsonify({"error": "File not found"}), 404
+# Load handlers on first connection
+@socketio.on('connect')
+def handle_global_connect():
+    load_socketio_handlers()
 
 # ========== APPLICATION FACTORY ==========
 def create_app():
@@ -377,27 +402,18 @@ def create_app():
     return app
 
 # ========== PRODUCTION ENTRY POINT ==========
-# ========== PRODUCTION ENTRY POINT ==========
-if __name__ == '__main__':
-    PORT = int(os.environ.get("PORT", 10000))
-    HOST = "0.0.0.0"
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
 
-    print(f"=== STARTING SERVER ON {HOST}:{PORT} ===", flush=True)
+    logger.info(f"Starting AgriConnect server on port {port}")
+    logger.info(f"CORS allowed origins: {FRONTEND_URLS}")
+    logger.info(f"Async mode: threading (no eventlet)")
 
-    try:
-        if socketio:
-            socketio.run(
-                app,
-                host=HOST,
-                port=PORT,
-                debug=False
-            )
-        else:
-            app.run(
-                host=HOST,
-                port=PORT,
-                debug=False
-            )
-    except Exception as e:
-        print(f"SERVER FAILED: {e}", flush=True)
-        raise
+    socketio.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        debug=False,
+        allow_unsafe_werkzeug=True
+    )
+    

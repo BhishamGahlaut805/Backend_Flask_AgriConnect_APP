@@ -1,88 +1,119 @@
-# Core Framework
+# ==========================================
+# CORE FLASK
+# ==========================================
 Flask==3.0.3
 Flask-Cors==4.0.1
 Flask-SocketIO==5.3.6
 Werkzeug==3.0.3
 gunicorn==22.0.0
-eventlet==0.36.1
 
-# Database
+# Threading-based SocketIO
+simple-websocket==1.0.0
+
+# ==========================================
+# DATABASE
+# ==========================================
 pymongo==4.7.2
-SQLAlchemy==2.0.49
 
-# Environment
+# Remove SQLAlchemy unless REALLY used
+# SQLAlchemy==2.0.30
+
+# ==========================================
+# ENVIRONMENT
+# ==========================================
 python-dotenv==1.0.1
 PyYAML==6.0.1
 
-# Networking & Requests
+# ==========================================
+# NETWORKING
+# ==========================================
 requests==2.32.3
-httpx==0.28.1
-aiohttp==3.13.5
-urllib3==2.7.0
+httpx==0.27.0
+urllib3==2.2.2
 
-# Security
-cryptography==48.0.0
+# ==========================================
+# SECURITY
+# ==========================================
+cryptography==42.0.8
 
-# Cloud
+# ==========================================
+# CLOUD
+# ==========================================
 cloudinary==1.40.0
 
-# Data Science
+# ==========================================
+# DATA SCIENCE
+# ==========================================
 numpy==1.26.4
 pandas==2.2.2
 scikit-learn==1.4.2
-scipy==1.15.3
-matplotlib==3.8.4
-seaborn==0.13.2
+scipy==1.13.1
 joblib==1.4.2
 
-# Deep Learning
-tensorflow==2.16.1
-tensorboard==2.16.2
-keras==3.14.1
-
-# PyTorch
-torch==2.3.0
-torchvision==0.18.0
-
-# Computer Vision
+# ==========================================
+# COMPUTER VISION
+# ==========================================
 opencv-python-headless==4.9.0.80
 Pillow==10.3.0
-ultralytics==8.2.0
 
-# NLP & Transformers
-transformers==4.57.6
-tokenizers==0.22.2
-sentence-transformers==2.7.0
-huggingface_hub==0.36.2
+# OPTIONAL:
+# ultralytics==8.2.0
 
-# LangChain
-langchain==0.2.16
-langchain-community==0.2.16
-langchain-core==0.2.43
-langchain-google-genai==1.0.10
-langchain-pinecone==0.1.3
-langchain-text-splitters==0.2.4
-langsmith==0.1.147
+# ==========================================
+# NLP / TRANSFORMERS
+# ==========================================
+transformers==4.41.2
+tokenizers==0.19.1
+huggingface_hub==0.23.4
 
-# Google AI
-google-generativeai==0.7.2
-google-ai-generativelanguage==0.6.6
-google-api-python-client==2.196.0
-google-auth==2.52.0
+# sentence-transformers REMOVED
 
-# Pinecone
-pinecone-client==5.0.1
+# ==========================================
+# LANGCHAIN
+# ==========================================
+langchain==0.2.6
+langchain-core==0.2.10
+langchain-community==0.2.6
+langchain-google-genai==1.0.5
+langchain-text-splitters==0.2.1
 
-# PDF Processing
+# Remove unless explicitly used
+# langsmith==0.1.77
+
+# ==========================================
+# GOOGLE AI
+# ==========================================
+google-generativeai==0.5.4
+google-ai-generativelanguage==0.6.4
+google-api-python-client==2.134.0
+google-auth==2.29.0
+
+# ==========================================
+# VECTOR DB
+# ==========================================
+pinecone-client==3.2.2
+
+# ==========================================
+# PDF PROCESSING
+# ==========================================
 PyPDF2==3.0.1
 
-# Web Scraping
+# ==========================================
+# WEB SCRAPING
+# ==========================================
 beautifulsoup4==4.12.3
 
-# Utilities
-plotly==5.22.0
-tqdm==4.67.3
-tenacity==8.5.0
-protobuf==4.25.9
-pydantic==2.13.4
-typing_extensions==4.15.0
+# ==========================================
+# UTILITIES
+# ==========================================
+tqdm==4.66.4
+tenacity==8.3.0
+protobuf==4.25.3
+pydantic==2.7.4
+typing_extensions==4.12.2
+
+# ==========================================
+# OPTIONAL VISUALIZATION
+# Remove if unused
+# ==========================================
+# plotly==5.22.0

@@ -1,15 +1,46 @@
 """
 Helper utilities for LLM module
-All PDF handling done with in-memory processing, no local file storage
+Optimized for Render deployment - all PDF handling with in-memory processing
 """
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.schema import Document
 from typing import List
 import io
 from PyPDF2 import PdfReader
-import tempfile
+
+# -----------------------------------
+# GLOBAL CACHE
+# -----------------------------------
+_embeddings_model = None
+
+
+def get_embeddings():
+    """
+    Lazy-load HuggingFace embeddings
+    Loads ONLY when first used, not during startup
+    """
+    global _embeddings_model
+
+    if _embeddings_model is None:
+        from langchain_community.embeddings import HuggingFaceEmbeddings
+
+        print("Loading HuggingFace embeddings...")
+
+        _embeddings_model = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2"
+        )
+
+        print("Embeddings loaded successfully")
+
+    return _embeddings_model
+
+
+def download_hugging_face_embeddings():
+    """
+    Backward-compatible wrapper for get_embeddings()
+    """
+    return get_embeddings()
 
 
 def load_pdf_from_bytes(file_bytes: bytes, filename: str) -> List[Document]:
@@ -75,17 +106,6 @@ def text_split(extracted_data: List[Document], chunk_size: int = 800,
     )
     text_chunks = text_splitter.split_documents(extracted_data)
     return text_chunks
-
-
-def download_hugging_face_embeddings():
-    """
-    Download embeddings from HuggingFace
-    Returns HuggingFaceEmbeddings instance
-    """
-    embeddings = HuggingFaceEmbeddings(
-        model_name='sentence-transformers/all-MiniLM-L6-v2'
-    )
-    return embeddings
 
 
 def chunk_pdf_bytes(file_bytes: bytes, filename: str, chunk_size: int = 800) -> List[Document]:

@@ -1,18 +1,11 @@
 # top of file
-from flask import current_app
-
-def get_socketio():
-    # SocketIO is stored in current_app.extensions by the SocketIO init
-    return current_app.extensions['socketio']
-
+from flask import Blueprint, current_app, render_template, request, jsonify, session
+from flask_cors import CORS
 import atexit
 import cv2
 import base64
 import time
 import numpy as np
-from flask import Blueprint, render_template, request, jsonify, session
-from flask_socketio import emit
-from ultralytics import YOLO
 import os
 from config import Config
 from datetime import datetime
@@ -24,13 +17,9 @@ import threading
 import logging
 from mongo_storage import mongo_storage
 from cloudinary_upload import CloudinaryUploader
+from flask_socketio import emit
 
 cloudinary_uploader = CloudinaryUploader()
-
-#importing cors
-from flask_cors import CORS
-from huggingface_hub import hf_hub_download
-HF_REPO_ID = os.getenv('HF_REPO_ID')
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -38,18 +27,59 @@ logger = logging.getLogger(__name__)
 
 weed_bp = Blueprint("weed_bp", __name__, static_folder="static")
 CORS(weed_bp)
-MODEL_PATH=hf_hub_download(
+
+# -----------------------------
+# GLOBAL CACHE
+# -----------------------------
+_weed_model = None
+_model_path = None
+
+
+def get_socketio():
+    return current_app.extensions['socketio']
+
+
+def get_model_path():
+    """
+    Download model ONLY when needed
+    """
+    global _model_path
+
+    if _model_path is None:
+        from huggingface_hub import hf_hub_download
+
+        HF_REPO_ID = os.getenv("HF_REPO_ID")
+
+        logger.info("Downloading YOLO model from HuggingFace...")
+
+        _model_path = hf_hub_download(
             repo_id=HF_REPO_ID,
             filename="Crop_Weed_Detection_yolo_API.pt"
         )
 
-# Load YOLO model with error handling
-try:
-    model = YOLO(MODEL_PATH)
-    logger.info(f"Successfully loaded model from {MODEL_PATH}")
-except Exception as e:
-    logger.error(f"Failed to load model: {e}")
-    model = None
+        logger.info(f"YOLO model downloaded: {_model_path}")
+
+    return _model_path
+
+
+def get_weed_model():
+    """
+    Lazy-load YOLO model
+    """
+    global _weed_model
+
+    if _weed_model is None:
+        logger.info("Loading YOLO model into memory...")
+
+        from ultralytics import YOLO
+
+        model_path = get_model_path()
+
+        _weed_model = YOLO(model_path)
+
+        logger.info("YOLO model loaded successfully")
+
+    return _weed_model
 
 class CameraManager:
     def __init__(self):
@@ -146,6 +176,38 @@ def upload_image():
         return jsonify({"error": "Invalid file type"}), 400
     except Exception as e:
         logger.error(f"Error in upload_image: {e}")
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+
+@weed_bp.route("/detect", methods=["POST"])
+def detect_weed():
+    try:
+        model = get_weed_model()
+
+        if not model:
+            return jsonify({"error": "Model not loaded"}), 500
+
+        if 'file' not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+
+        file = request.files['file']
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
+            tmp.write(file.read())
+            temp_path = tmp.name
+
+        results = process_image(temp_path)
+        try:
+            os.unlink(temp_path)
+        except Exception:
+            pass
+
+        if not results:
+            return jsonify({"error": "Failed to process image"}), 500
+
+        return jsonify({"success": True, "results": results})
+    except Exception as e:
+        logger.exception(f"Error in detect_weed: {e}")
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 @weed_bp.route("/start_webcam", methods=['POST','GET'])
@@ -277,6 +339,8 @@ def allowed_file(filename, allowed_extensions=None):
 
 def process_image(image_path):
     try:
+        model = get_weed_model()
+
         if not model:
             logger.error("Model not loaded")
             return None
@@ -403,6 +467,9 @@ def generate_frames(socketio):
         frame_count = 0
         start_time = time.time()
 
+        # ensure model is loaded (lazy)
+        model = get_weed_model()
+
         while camera_manager.get_streaming():
             try:
                 ret, frame = camera.read()
@@ -430,8 +497,13 @@ def generate_frames(socketio):
 
                 # Process frame with model
                 if model:
-                    results = model.predict(frame, verbose=False)
-                    annotated = results[0].plot() if results and len(results) > 0 else frame
+                    try:
+                        results = model.predict(frame, verbose=False)
+                        annotated = results[0].plot() if results and len(results) > 0 else frame
+                    except Exception as e:
+                        logger.error(f"Model prediction error: {e}")
+                        results = None
+                        annotated = frame
 
                     # Collect detection stats
                     detections = []

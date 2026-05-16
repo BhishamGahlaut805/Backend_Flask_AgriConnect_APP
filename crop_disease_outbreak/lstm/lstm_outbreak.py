@@ -2,20 +2,23 @@
 LSTM Outbreak Predictor
 Trains LSTM models for disease outbreak prediction using data from MongoDB
 Stores models and scalers in MongoDB GridFS instead of local files
+OPTIMIZED for Render deployment - lazy loading of TensorFlow/Keras
 """
 
 import os
 import io
+import gc
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
-from tensorflow.keras.models import Sequential, load_model
-from tensorflow.keras.layers import LSTM, Dense, Dropout
-from tensorflow.keras.callbacks import EarlyStopping
 from sklearn.preprocessing import StandardScaler
 import joblib
 import tempfile
+
+# TensorFlow memory optimization - prevents CUDA/GPU loading
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"  # Suppress TF info/warning messages
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Disable GPU/CUDA completely
 
 from mongo_storage import mongo_storage
 from logging_config import logger
@@ -241,10 +244,15 @@ class LSTMOutbreakPredictor:
             logger.error(f"Failed to save model to MongoDB: {e}")
             raise
 
-    def _load_model_from_mongodb(self, farm_id: str) -> Optional[Tuple[Sequential, StandardScaler, StandardScaler, List[str]]]:
-        """Load LSTM model and scalers from MongoDB GridFS"""
+    def _load_model_from_mongodb(self, farm_id: str) -> Optional[Tuple[Any, StandardScaler, StandardScaler, List[str]]]:
+        """Load LSTM model and scalers from MongoDB GridFS
+        LAZY LOADS TensorFlow/Keras ONLY when needed
+        """
         try:
             import tempfile
+
+            # Lazy import TensorFlow/Keras - only when loading model
+            from tensorflow.keras.models import load_model
 
             farm_doc = self.farm_col.find_one({"farm_id": farm_id})
             if not farm_doc or "lstm_model_ids" not in farm_doc:
@@ -303,8 +311,20 @@ class LSTMOutbreakPredictor:
             y_seq.append(y[i+seq_len])
         return np.array(X_seq), np.array(y_seq)
 
+    def _cleanup_tensorflow(self):
+        """Clean up TensorFlow session and memory"""
+        try:
+            import tensorflow as tf
+            tf.keras.backend.clear_session()
+            gc.collect()
+            logger.debug("TensorFlow session cleared")
+        except Exception as e:
+            logger.debug(f"TensorFlow cleanup skipped: {e}")
+
     def train_and_predict(self, farm_doc: Dict) -> Optional[List[Dict]]:
-        """Train LSTM model and generate predictions"""
+        """Train LSTM model and generate predictions
+        LAZY LOADS TensorFlow/Keras ONLY when training
+        """
         farm_id = farm_doc.get("farm_id")
         farm_name = farm_doc.get("farm_name", "UnknownFarm")
 
@@ -373,6 +393,14 @@ class LSTMOutbreakPredictor:
         # Split for training (use all data for training since we have limited data)
         X_train, y_train = X_seq, y_seq
 
+        # ===========================================
+        # LAZY LOAD TensorFlow/Keras - only when needed
+        # ===========================================
+        import tensorflow as tf
+        from tensorflow.keras.models import Sequential
+        from tensorflow.keras.layers import LSTM, Dense, Dropout
+        from tensorflow.keras.callbacks import EarlyStopping
+
         # Build model
         model = Sequential()
         model.add(LSTM(64, activation='relu', return_sequences=True,
@@ -439,6 +467,11 @@ class LSTMOutbreakPredictor:
         # Save model to MongoDB
         self._save_model_to_mongodb(model, scaler_X, scaler_y, farm_id, feature_cols)
 
+        # ===========================================
+        # CLEANUP TensorFlow memory
+        # ===========================================
+        self._cleanup_tensorflow()
+
         # Update farm document with predictions
         self.farm_col.update_one(
             {"farm_id": farm_id},
@@ -461,7 +494,7 @@ class LSTMOutbreakPredictor:
         farm_id = farm_doc.get("farm_id")
         farm_name = farm_doc.get("farm_name", "UnknownFarm")
 
-        # Load existing model
+        # Load existing model (lazy loads TensorFlow)
         model_data = self._load_model_from_mongodb(farm_id)
         if not model_data:
             logger.info(f"No existing model for {farm_name}, training new model")
@@ -473,6 +506,8 @@ class LSTMOutbreakPredictor:
         df = self.get_training_data_from_mongodb(farm_id)
         if df is None or len(df) < 10:
             logger.warning(f"Not enough data for prediction for {farm_name}")
+            # Cleanup before returning
+            self._cleanup_tensorflow()
             return None
 
         # Prepare latest data
@@ -484,6 +519,7 @@ class LSTMOutbreakPredictor:
         available_features = [col for col in feature_cols if col in df.columns]
         if len(available_features) != len(feature_cols):
             logger.warning(f"Missing features for {farm_name}. Expected {len(feature_cols)}, got {len(available_features)}")
+            self._cleanup_tensorflow()
             return self.train_and_predict(farm_doc)
 
         X_data = df[feature_cols].values
@@ -495,6 +531,7 @@ class LSTMOutbreakPredictor:
 
         if len(X_scaled) < seq_len:
             logger.warning(f"Not enough data for sequence for {farm_name}")
+            self._cleanup_tensorflow()
             return None
 
         recent_seq = X_scaled[-seq_len:].reshape(1, seq_len, len(feature_cols))
@@ -537,6 +574,9 @@ class LSTMOutbreakPredictor:
                 "lstm_last_updated": datetime.utcnow()
             }}
         )
+
+        # Cleanup TensorFlow memory
+        self._cleanup_tensorflow()
 
         logger.info(f"Predictions updated for {farm_name}")
         return result
@@ -603,6 +643,9 @@ class LSTMOutbreakPredictor:
                     "error": str(e)
                 })
                 logger.error(f"Failed for {farm_name}: {e}")
+            finally:
+                # Ensure cleanup after each farm
+                self._cleanup_tensorflow()
 
         # Store results in MongoDB
         self.db["lstm_batch_results"].insert_one({
