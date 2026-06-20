@@ -117,3 +117,5 @@ typing_extensions==4.12.2
 # Remove if unused
 # ==========================================
 # plotly==5.22.0
+
+torch==2.7.1
