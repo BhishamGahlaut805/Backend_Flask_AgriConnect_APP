@@ -14,7 +14,7 @@ simple-websocket==1.0.0
 # DATABASE
 # ==========================================
 pymongo==4.7.2
-
+plotly==6.2.0
 # Remove SQLAlchemy unless REALLY used
 # SQLAlchemy==2.0.30
 

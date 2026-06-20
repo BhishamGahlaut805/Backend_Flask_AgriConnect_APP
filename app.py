@@ -403,7 +403,7 @@ def create_app():
 
 # ========== PRODUCTION ENTRY POINT ==========
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 5505))
 
     logger.info(f"Starting AgriConnect server on port {port}")
     logger.info(f"CORS allowed origins: {FRONTEND_URLS}")
@@ -416,4 +416,3 @@ if __name__ == "__main__":
         debug=False,
         allow_unsafe_werkzeug=True
     )
-    
