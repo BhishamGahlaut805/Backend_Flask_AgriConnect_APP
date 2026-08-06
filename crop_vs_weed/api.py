@@ -253,42 +253,127 @@ def stop_webcam():
 @weed_bp.route("/start_video", methods=['POST','GET'])
 def start_video():
     try:
-        # Prefer filename from client JSON body
-        filename = None
-        if request.method == 'POST' and request.is_json:
-            payload = request.get_json(silent=True) or {}
-            filename = payload.get('filename') or payload.get('video_path')
+        # Check if a video file is being uploaded directly
+        if request.method == 'POST':
+            # Check if file is in request
+            if 'file' in request.files:
+                file = request.files['file']
+                if file and file.filename != '':
+                    # Validate file type
+                    allowed_video_extensions = ['mp4', 'avi', 'mov', 'mkv', 'webm', 'm4v']
+                    if not allowed_file(file.filename, allowed_video_extensions):
+                        return jsonify({
+                            "success": False,
+                            "message": "Invalid video file type. Supported: MP4, AVI, MOV, MKV, WEBM, M4V"
+                        }), 400
 
-        # fallback to session (existing behavior)
-        if not filename:
-            video_path = session.get('video_path')
-        else:
-            # if client sent a relative path like "/static/uploads/xxx", convert to absolute
-            if filename.startswith('/'):
-                # make sure to translate to filesystem path if necessary
-                # assuming uploaded files saved under Config.UPLOAD_FOLDER
-                # if filename is "/static/uploads/video_xxx.mp4" convert to os.path.join(Config.UPLOAD_FOLDER, basename)
-                filename_fs = os.path.basename(filename)
-                video_path = os.path.join(Config.UPLOAD_FOLDER, filename_fs)
+                    # Read video file into memory
+                    video_bytes = file.read()
+
+                    # Create a temporary file to process the video
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
+                        tmp_file.write(video_bytes)
+                        video_path = tmp_file.name
+
+                    # Store the video path in session for potential later use
+                    session['video_path'] = video_path
+
+                    logger.info(f"Video uploaded and saved temporarily: {video_path}")
+                else:
+                    # No file uploaded, check for filename in JSON
+                    if request.is_json:
+                        payload = request.get_json(silent=True) or {}
+                        filename = payload.get('filename') or payload.get('video_path')
+
+                        if not filename:
+                            return jsonify({
+                                "success": False,
+                                "message": "No video file or filename provided"
+                            }), 400
+
+                        # Use the provided filename directly
+                        video_path = filename
+                    else:
+                        return jsonify({
+                            "success": False,
+                            "message": "No video file or filename provided"
+                        }), 400
             else:
-                video_path = os.path.join(Config.UPLOAD_FOLDER, filename)
+                # No file in request, check for filename in JSON
+                if request.is_json:
+                    payload = request.get_json(silent=True) or {}
+                    filename = payload.get('filename') or payload.get('video_path')
 
-        # final check
-        if not video_path or not os.path.exists(video_path):
-            logger.warning("start_video: video_path missing or not found: %s", video_path)
-            return jsonify({"success": False, "message": "No video uploaded or file not found"}), 400
+                    if not filename:
+                        return jsonify({
+                            "success": False,
+                            "message": "No video file or filename provided"
+                        }), 400
 
+                    video_path = filename
+                else:
+                    # Check session for video path
+                    video_path = session.get('video_path')
+                    if not video_path:
+                        return jsonify({
+                            "success": False,
+                            "message": "No video uploaded or filename provided"
+                        }), 400
+        else:
+            # GET request - check session
+            video_path = session.get('video_path')
+            if not video_path:
+                return jsonify({
+                    "success": False,
+                    "message": "No video uploaded or filename provided"
+                }), 400
+
+        # Check if the video file exists
+        if not os.path.exists(video_path):
+            # Try to find the file by checking common locations
+            possible_paths = [
+                video_path,  # Original path
+                os.path.join(os.getcwd(), video_path),  # Current directory
+                os.path.join(os.getcwd(), 'static', video_path),  # Static folder
+                os.path.join(os.getcwd(), 'temp', video_path),  # Temp folder
+            ]
+
+            found = False
+            for path in possible_paths:
+                if os.path.exists(path):
+                    video_path = path
+                    found = True
+                    break
+
+            if not found:
+                logger.warning(f"Video file not found: {video_path}")
+                return jsonify({
+                    "success": False,
+                    "message": f"Video file not found: {video_path}"
+                }), 404
+
+        # Check if streaming is already active
         if camera_manager.get_streaming():
-            return jsonify({"success": False, "message": "Video already playing"})
+            return jsonify({
+                "success": False,
+                "message": "Video already playing"
+            }), 400
 
+        # Open the video file
         camera = cv2.VideoCapture(video_path)
         if not camera.isOpened():
-            return jsonify({"success": False, "message": "Failed to open video file"})
+            logger.error(f"Failed to open video file: {video_path}")
+            return jsonify({
+                "success": False,
+                "message": "Failed to open video file"
+            }), 500
 
+        # Set camera in manager
         camera_manager.set_camera(camera, 'video', video_path)
         camera_manager.set_streaming(True)
 
-        # start emitter thread using socketio stored in current_app
+        # Start frame generation thread
         socketio = get_socketio()
         threading.Thread(
             target=generate_frames,
@@ -296,11 +381,19 @@ def start_video():
             daemon=True
         ).start()
 
-        logger.info("Video playback started successfully: %s", video_path)
-        return jsonify({"success": True, "message": "Video playback started"})
+        logger.info(f"Video playback started successfully: {video_path}")
+        return jsonify({
+            "success": True,
+            "message": "Video playback started",
+            "video_path": video_path
+        })
+
     except Exception as e:
-        logger.exception("Error starting video: %s", e)
-        return jsonify({"success": False, "message": f"Error starting video: {str(e)}"}), 500
+        logger.exception(f"Error starting video: {e}")
+        return jsonify({
+            "success": False,
+            "message": f"Error starting video: {str(e)}"
+        }), 500
 
 @weed_bp.route("/stop_video",methods=['POST','GET'])
 def stop_video():
@@ -328,15 +421,6 @@ def stop_streaming():
     except Exception as e:
         logger.error(f"Error stopping streaming: {e}")
         return jsonify({"success": False, "message": f"Error stopping streaming: {str(e)}"})
-
-# Helper functions
-def allowed_file(filename, allowed_extensions=None):
-    if allowed_extensions is None:
-        allowed_extensions = Config.ALLOWED_EXTENSIONS
-
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in allowed_extensions
-
 def process_image(image_path):
     try:
         model = get_weed_model()
@@ -357,10 +441,17 @@ def process_image(image_path):
 
         annotated = results[0].plot()
 
-        # Save annotated image
+        # FIX: Save annotated image to temp folder instead of UPLOAD_FOLDER
+        import tempfile
         annotated_filename = f"annotated_{os.path.basename(image_path)}"
-        annotated_path = os.path.join(Config.UPLOAD_FOLDER, annotated_filename)
+
+        # Save to temp directory
+        temp_dir = tempfile.gettempdir()
+        annotated_path = os.path.join(temp_dir, annotated_filename)
         cv2.imwrite(annotated_path, annotated)
+
+        # Store the temp path for later use
+        # The annotated_image path will be served from temp
 
         # Collect detection stats
         detections = []
@@ -389,11 +480,57 @@ def process_image(image_path):
             "detections": detections,
             "counts": class_counts,
             "confidences": avg_confidences,
-            "annotated_image": f"/static/uploads/{annotated_filename}"
+            "annotated_image": f"/temp/{annotated_filename}"  # Serve from temp
         }
     except Exception as e:
         logger.error(f"Error processing image: {e}")
         return None
+# Helper functions
+def allowed_file(filename, allowed_extensions=None):
+    if allowed_extensions is None:
+        allowed_extensions = Config.ALLOWED_EXTENSIONS
+
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in allowed_extensions
+
+@weed_bp.route("/detect", methods=["POST"])
+def detect_weed():
+    try:
+        model = get_weed_model()
+
+        if not model:
+            return jsonify({"error": "Model not loaded"}), 500
+
+        if 'file' not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+
+        file = request.files['file']
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
+            tmp.write(file.read())
+            temp_path = tmp.name
+
+        results = process_image(temp_path)
+        try:
+            os.unlink(temp_path)
+        except Exception:
+            pass
+
+        if not results:
+            return jsonify({"error": "Failed to process image"}), 500
+
+        # If using base64, include it in response
+        if 'annotated_image_base64' in results:
+            return jsonify({
+                "success": True,
+                "results": results,
+                "annotated_image": results['annotated_image_base64']
+            })
+
+        return jsonify({"success": True, "results": results})
+    except Exception as e:
+        logger.exception(f"Error in detect_weed: {e}")
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 def generate_detection_graphs(results):
     try:

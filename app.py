@@ -175,7 +175,7 @@ def register_optional_blueprints():
         ("weather_section.api", "weather_bp", "/api/weather"),
         ("crop_yield_predictor.api", "api_blueprint", None),
         ("market_price.market_prices", "market_prices_bp", None),
-        ("farm_models.api", "CropRecommendationBp", "/api/v1"),
+        ("farm_models.api", "CropRecommendationBp", "/api/v1")
     ]
 
     for module_name, blueprint_name, prefix in modules:
@@ -196,10 +196,88 @@ def register_optional_blueprints():
 # Register lightweight blueprints
 register_optional_blueprints()
 
-# ========== LAZY-LOADED HEAVY BLUEPRINT ROUTES ==========
-# Instead of importing heavy blueprints at startup, create routes
-# that lazy-import internally
+# ========== WEED DETECTION BLUEPRINT - REGISTER AT STARTUP ==========
+# Import and register weed blueprint at startup
+# The YOLO model is lazily loaded inside the blueprint via get_weed_model()
+try:
+    from crop_vs_weed.api import weed_bp
+    app.register_blueprint(weed_bp, url_prefix='/api/weed')
+    logger.info("✅ Weed detection blueprint registered successfully")
+except ImportError as e:
+    logger.warning(f"Could not import weed blueprint: {e}")
+    logger.info("Weed detection will be available via lazy loading fallback")
 
+    # Fallback: Create a lazy loading route
+    @app.route('/api/weed/<path:subpath>', methods=['GET', 'POST', 'OPTIONS'])
+    def lazy_weed_fallback(subpath):
+        """Fallback lazy loader for weed detection"""
+        try:
+            # Import the module dynamically
+            import importlib
+            weed_module = importlib.import_module('crop_vs_weed.api')
+
+            # Get the view function from the module
+            if hasattr(weed_module, subpath):
+                view_func = getattr(weed_module, subpath)
+                return view_func()
+            elif subpath == 'upload_image':
+                return weed_module.upload_image()
+            elif subpath == 'detect':
+                return weed_module.detect_weed()
+            elif subpath == 'start_webcam':
+                return weed_module.start_webcam()
+            elif subpath == 'stop_webcam':
+                return weed_module.stop_webcam()
+            elif subpath == 'start_video':
+                return weed_module.start_video()
+            elif subpath == 'stop_video':
+                return weed_module.stop_video()
+            elif subpath == 'stop_streaming':
+                return weed_module.stop_streaming()
+            else:
+                return jsonify({"error": f"Route /api/weed/{subpath} not found"}), 404
+        except Exception as e:
+            logger.error(f"Weed detection route failed: {e}", exc_info=True)
+            return jsonify({"error": "Weed detection service unavailable"}), 503
+
+except Exception as e:
+    logger.warning(f"Could not register weed blueprint: {e}")
+    logger.info("Weed detection will be available via lazy loading fallback")
+
+    # Fallback: Create a lazy loading route
+    @app.route('/api/weed/<path:subpath>', methods=['GET', 'POST', 'OPTIONS'])
+    def lazy_weed_fallback(subpath):
+        """Fallback lazy loader for weed detection"""
+        try:
+            # Import the module dynamically
+            import importlib
+            weed_module = importlib.import_module('crop_vs_weed.api')
+
+            # Get the view function from the module
+            if hasattr(weed_module, subpath):
+                view_func = getattr(weed_module, subpath)
+                return view_func()
+            elif subpath == 'upload_image':
+                return weed_module.upload_image()
+            elif subpath == 'detect':
+                return weed_module.detect_weed()
+            elif subpath == 'start_webcam':
+                return weed_module.start_webcam()
+            elif subpath == 'stop_webcam':
+                return weed_module.stop_webcam()
+            elif subpath == 'start_video':
+                return weed_module.start_video()
+            elif subpath == 'stop_video':
+                return weed_module.stop_video()
+            elif subpath == 'stop_streaming':
+                return weed_module.stop_streaming()
+            else:
+                return jsonify({"error": f"Route /api/weed/{subpath} not found"}), 404
+        except Exception as e:
+            logger.error(f"Weed detection route failed: {e}", exc_info=True)
+            return jsonify({"error": "Weed detection service unavailable"}), 503
+
+# ========== AGRIBOT LAZY LOADING ==========
 @app.route('/api/agribot/<path:subpath>', methods=['GET', 'POST'])
 def lazy_agribot(subpath):
     """Lazy load Agribot blueprint only when accessed"""
@@ -211,17 +289,6 @@ def lazy_agribot(subpath):
     except Exception as e:
         logger.error(f"Agribot route failed: {e}")
         return jsonify({"error": "Agribot service unavailable"}), 503
-
-@app.route('/api/weed/<path:subpath>', methods=['GET', 'POST'])
-def lazy_weed(subpath):
-    """Lazy load Weed detection blueprint only when accessed"""
-    try:
-        # Import only when route is called - loads YOLO/OpenCV at that time
-        from crop_vs_weed.api import weed_bp
-        return weed_bp.handle_request(subpath)
-    except Exception as e:
-        logger.error(f"Weed detection route failed: {e}")
-        return jsonify({"error": "Weed detection service unavailable"}), 503
 
 # ========== MAIN API ENDPOINTS ==========
 
@@ -323,6 +390,30 @@ def predict_disease():
     except Exception as e:
         logger.error(f"Prediction failed: {e}", exc_info=True)
         return jsonify({"status": "error", "error": "Prediction service error"}), 500
+
+
+# ========== TEMP FILE SERVING ==========
+@app.route('/temp/<filename>')
+def serve_temp_file(filename):
+    """Serve temporary files"""
+    try:
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        file_path = os.path.join(temp_dir, filename)
+
+        if os.path.exists(file_path):
+            return Response(
+                open(file_path, 'rb').read(),
+                mimetype='image/jpeg',
+                headers={
+                    "Content-Disposition": f"inline; filename={filename}"
+                }
+            )
+        else:
+            return jsonify({"error": "File not found"}), 404
+    except Exception as e:
+        logger.error(f"Temp file serve failed: {e}")
+        return jsonify({"error": "File not found"}), 404
 
 # ========== FILE SERVING - FIXED FOR GRIDFS ==========
 @app.route('/api/uploads/<file_id>')
