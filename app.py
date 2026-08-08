@@ -61,6 +61,7 @@ FRONTEND_URLS = [
     "http://localhost:5173",
     "http://localhost:3000",
     "http://localhost:5000",
+    "https://agri-connect-app-connecting-farmers.vercel.app"
 ]
 
 frontend_env = os.environ.get("FRONTEND_URL")
@@ -278,17 +279,71 @@ except Exception as e:
             return jsonify({"error": "Weed detection service unavailable"}), 503
 
 # ========== AGRIBOT LAZY LOADING ==========
-@app.route('/api/agribot/<path:subpath>', methods=['GET', 'POST'])
-def lazy_agribot(subpath):
-    """Lazy load Agribot blueprint only when accessed"""
-    try:
-        # Import only when route is called
-        from llm.api import Agribot_bp1
-        # Create a request context and forward to blueprint
-        return Agribot_bp1.handle_request(subpath)
-    except Exception as e:
-        logger.error(f"Agribot route failed: {e}")
-        return jsonify({"error": "Agribot service unavailable"}), 503
+# Import the blueprint at startup but register dynamically
+_agribot_blueprint = None
+_agribot_imported = False
+
+def get_agribot_blueprint():
+    """Lazy import the Agribot blueprint"""
+    global _agribot_blueprint, _agribot_imported
+    if not _agribot_imported:
+        try:
+            from llm.api import Agribot_bp1
+            _agribot_blueprint = Agribot_bp1
+            _agribot_imported = True
+            logger.info("✅ Agribot blueprint imported lazily")
+        except ImportError as e:
+            logger.warning(f"Could not import Agribot blueprint: {e}")
+            _agribot_blueprint = None
+    return _agribot_blueprint
+
+# Register the blueprint at startup
+agribot_bp = get_agribot_blueprint()
+if agribot_bp:
+    app.register_blueprint(agribot_bp, url_prefix='/api/agribot')
+    logger.info("✅ Agribot blueprint registered at startup")
+else:
+    # Fallback route for when blueprint is not available at startup
+    @app.route('/api/agribot/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+    def lazy_agribot_fallback(subpath):
+        """Fallback lazy loader for Agribot"""
+        try:
+            # Try to import the blueprint again
+            agribot_bp = get_agribot_blueprint()
+            if not agribot_bp:
+                return jsonify({"error": "Agribot service not available"}), 503
+
+            # Manual dispatch to blueprint endpoints
+            endpoint_map = {
+                'chat': 'chat',
+                'health': 'health_check',
+                'session/clear': 'clear_session',
+                'session/history': 'get_session_history',
+                'session/contexts': 'get_session_contexts',
+                'admin/status': 'admin_status',
+                'admin/scrape/weather': 'admin_scrape_weather',
+                'admin/scrape/news': 'admin_scrape_news',
+                'admin/scrape/bulletins': 'admin_scrape_bulletins',
+                'admin/scrape/diseases': 'admin_scrape_diseases',
+                'admin/scrape/all': 'admin_scrape_all',
+                'admin/upload-pdf': 'admin_upload_pdf',
+                'admin/uploaded-files': 'get_uploaded_files',
+                'admin/delete-uploaded-file': 'delete_uploaded_file',
+                'admin/context-analysis': 'analyze_context',
+                'admin/reload-questionnaires': 'reload_questionnaires'
+            }
+
+            func_name = endpoint_map.get(subpath)
+            if func_name:
+                view_func = agribot_bp.view_functions.get(func_name)
+                if view_func:
+                    return view_func()
+
+            return jsonify({"error": f"Endpoint /api/agribot/{subpath} not found"}), 404
+
+        except Exception as e:
+            logger.error(f"Agribot fallback route failed: {e}", exc_info=True)
+            return jsonify({"error": "Agribot service unavailable"}), 503
 
 # ========== MAIN API ENDPOINTS ==========
 

@@ -209,21 +209,39 @@ def detect_weed():
     except Exception as e:
         logger.exception(f"Error in detect_weed: {e}")
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
-
-@weed_bp.route("/start_webcam", methods=['POST','GET'])
+@weed_bp.route("/start_webcam", methods=['POST', 'GET', 'OPTIONS'])
 def start_webcam():
-    try:
-        if camera_manager.get_streaming():
-            return jsonify({"success": False, "message": "Webcam already running"})
+    """Start webcam streaming with CORS support"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = jsonify({"success": True})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,Accept')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
 
+    try:
+        # Check if already streaming
+        if camera_manager.get_streaming():
+            response = jsonify({"success": False, "message": "Webcam already running"})
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            response.headers.add('Access-Control-Allow-Credentials', 'true')
+            return response, 400
+
+        # Open webcam
         camera = cv2.VideoCapture(0)
         if not camera.isOpened():
-            return jsonify({"success": False, "message": "Failed to open webcam"})
+            response = jsonify({"success": False, "message": "Failed to open webcam"})
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            response.headers.add('Access-Control-Allow-Credentials', 'true')
+            return response, 500
 
+        # Set camera in manager
         camera_manager.set_camera(camera, 'webcam', 0)
         camera_manager.set_streaming(True)
 
-        # 🔑 start emitting frames
+        # Start emitting frames in background
         threading.Thread(
             target=generate_frames,
             args=(get_socketio(),),
@@ -231,11 +249,27 @@ def start_webcam():
         ).start()
 
         logger.info("Webcam started successfully")
-        return jsonify({"success": True, "message": "Webcam started"})
+
+        # Success response with CORS headers
+        response = jsonify({
+            "success": True,
+            "message": "Webcam started",
+            "streaming": True
+        })
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+
     except Exception as e:
         logger.error(f"Error starting webcam: {e}")
-        return jsonify({"success": False, "message": f"Error starting webcam: {str(e)}"})
-
+        response = jsonify({
+            "success": False,
+            "message": f"Error starting webcam: {str(e)}"
+        })
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response, 500
+    
 @weed_bp.route("/stop_webcam",methods=['POST','GET'])
 def stop_webcam():
     try:
